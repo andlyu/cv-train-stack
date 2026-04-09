@@ -122,6 +122,29 @@ Available VAST.ai GPUs:
 Multiply time estimate by $/hr to get estimated cost. Always show this before the user
 commits to a VAST instance.
 
+### Step 0d: Logging Selection
+
+**Ask the user which logging backend to use.** Default to custom CSV.
+
+| Option | When to show | Notes |
+|--------|-------------|-------|
+| **Custom CSV (default)** | Always | Zero dependencies. Writes `training_log.csv` to output dir with one row per epoch. Append-mode so metrics are visible mid-training. |
+| Weights & Biases (W&B) | Always | Richer dashboards, experiment comparison. Requires `wandb` installed and authenticated. |
+
+**Regardless of choice, the training script MUST:**
+1. Write metrics to `output/training_log.csv` every epoch (append-mode, never buffered)
+2. CSV columns: `epoch,train_loss,train_acc,val_loss,val_acc,lr`
+3. Write the CSV header before training starts
+4. Open the file in append mode and flush/close after each epoch write — metrics must
+   be readable mid-training (no buffering, no writing only at the end)
+
+This is non-negotiable — the CSV log is the minimum. W&B is additive on top.
+
+**If W&B is selected**, also:
+- `wandb.init(project=<project_name>, config=<all hyperparams>)`
+- `wandb.log()` each epoch with train/val loss, accuracy, and LR
+- Log the best model as a W&B artifact
+
 ### Step 0c: Read Current State
 
 ```
@@ -290,7 +313,8 @@ Before training starts, verify:
 - [ ] Training args/hyperparameters are saved (args file or config json)
 - [ ] Random seed is set for reproducibility
 - [ ] Dataset version/composition is recorded (source, version, class counts, split sizes)
-- [ ] Training metrics (loss, accuracy) are logged per epoch
+- [ ] **Training metrics are continuously logged to `output/training_log.csv`** — CSV with columns `epoch,train_loss,train_acc,val_loss,val_acc,lr`. Must be append-mode and flushed after each epoch so metrics are readable mid-training. This is REQUIRED regardless of logging backend choice (see Step 0d).
+- [ ] If W&B was selected in Step 0d, `wandb.log()` is called each epoch
 - [ ] Best model checkpoint is saved with validation metrics
 
 **Why save the exact command:** "How was this model trained?" is the most common question
