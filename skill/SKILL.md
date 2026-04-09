@@ -644,6 +644,77 @@ preprocessing:
 
 ---
 
+## Post-Deployment Verification
+
+After exporting and deploying a model (to device, server, or TRT engine), verify it
+works correctly in the target environment. This is a separate step from Validate —
+Validate checks the model in isolation, this checks it in the real pipeline.
+
+### Path A: Automated Tests Exist
+
+If the project has test files (e.g. `test_*accuracy*`, `test_*pipeline*`, `test_*classification*`):
+
+1. **Run accuracy tests on the deployed model** — these should test the exported format
+   (.engine, .onnx) not the .pt file. Verify:
+   - Overall accuracy meets threshold (e.g. >=90%)
+   - Per-class recall/precision meet thresholds
+   - Inference speed meets target
+   
+2. **Run pipeline/integration tests** — these run the full pipeline end-to-end with
+   the deployed model. Verify:
+   - Model loads correctly in the pipeline
+   - Processing speed is acceptable (no regression)
+   - Classification results are consistent with training metrics
+
+3. **Compare against previous version** — if a previous model version exists, run the
+   same tests on both and compare. Flag any regressions.
+
+Report results as a comparison table:
+
+```
+| Metric           | Previous (vN-1) | Current (vN) | Delta  |
+|------------------|-----------------|--------------|--------|
+| Accuracy         | 96.7%           | 98.3%        | +1.6%  |
+| Bad recall       | 92.0%           | 95.0%        | +3.0%  |
+| Good precision   | 97.0%           | 98.0%        | +1.0%  |
+| Inference (ms)   | 4.8             | 5.9          | +1.1   |
+| Misclassified    | 2               | 1            | -1     |
+```
+
+### Path B: No Tests (First Deploy or New Project)
+
+If no automated tests exist yet:
+
+1. **Visual verification** — run the model on 10-20 representative inputs and show
+   the results to the user. For classifiers, show the image with the predicted label
+   and confidence. For detectors, show bounding boxes overlaid on images.
+
+2. **Spot-check failure modes** — specifically test known hard cases:
+   - Edge-of-frame crops
+   - Unusual angles or lighting
+   - Ambiguous examples near the decision boundary
+   - Examples the previous model got wrong (if known)
+
+3. **Live pipeline test** — if the model runs in a real-time pipeline, run it briefly
+   and check the output visually. Look for:
+   - Are predictions sensible?
+   - Any obvious false positives or false negatives?
+   - Is latency acceptable?
+
+4. **Recommend creating tests** — after visual verification passes, suggest creating
+   a test suite from the verified examples so future deploys can be tested automatically.
+
+### Path C: Both
+
+When automated tests exist but you want extra confidence (e.g. major architecture change,
+new training data source, or production-critical deploy):
+
+1. Run Path A (automated tests)
+2. Then run a brief visual check from Path B on the hardest examples
+3. If the pipeline supports it, run a short live test with real data
+
+---
+
 ## Audit
 
 Full audit of all training/inference paths for preprocessing consistency.
