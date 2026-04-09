@@ -268,6 +268,34 @@ Also check:
 | **Input size** | Must match inference size | Match training imgsz | **Check constants** |
 | **Pretrained** | Yes (ImageNet) | Yes (COCO) | Always for small datasets |
 
+### Step 4a: FPS / Input Size Tradeoff
+
+**If the model will run on edge hardware, ask the user about FPS requirements.**
+
+Input size is the biggest lever for inference speed. Larger images = better accuracy
+but slower inference. This tradeoff must be decided before training, not after.
+
+**Ask:** "What FPS do you need on your target device?"
+
+| Target Device | imgsz=320 | imgsz=640 | imgsz=1280 |
+|--------------|-----------|-----------|------------|
+| Jetson Orin Nano (FP16) | ~60-80 FPS | ~15-25 FPS | ~4-8 FPS |
+| Jetson Orin NX (FP16) | ~100+ FPS | ~30-50 FPS | ~10-15 FPS |
+| Jetson AGX Orin (FP16) | ~150+ FPS | ~60-80 FPS | ~20-30 FPS |
+| RTX 3060 (FP16) | ~200+ FPS | ~80-120 FPS | ~25-40 FPS |
+
+*Estimates for YOLO11n. Actual FPS depends on model size, batch size, and TensorRT optimization.*
+
+**Decision guide:**
+- Need >30 FPS real-time: use imgsz=320 or 640 depending on device
+- Need >60 FPS (robotics, real-time control): likely imgsz=320
+- Accuracy-first (offline processing): use imgsz=640 or larger
+- If unsure, train at 640 — it's the best default balance
+
+**After training, always benchmark actual FPS on the target device** (see Validate
+Step 6). Training-time estimates are rough — TensorRT optimization and device-specific
+factors can shift FPS significantly.
+
 For transfer learning (classifier):
 1. Freeze base, train head only (5-10 epochs)
 2. Unfreeze top layers, fine-tune with 10x lower LR
@@ -542,7 +570,58 @@ For each golden crop:
 
 If no golden fixture exists, recommend creating one from this training run's outputs.
 
-### Step 5: Save Model Metadata
+### Step 5: FPS Benchmark
+
+**If the model targets edge/real-time deployment, benchmark inference speed.**
+
+Run on the target device if accessible, otherwise benchmark locally and note
+that actual device FPS will differ.
+
+```bash
+# Quick benchmark with Ultralytics (runs 100 inference passes)
+yolo benchmark model=best.pt imgsz=640 device=0 half=True
+
+# Or via Python
+from ultralytics import YOLO
+model = YOLO("best.pt")
+results = model.benchmark(imgsz=640, half=True, device=0)
+```
+
+**If target device is accessible via SSH:**
+
+```bash
+# Copy model to device and benchmark there
+scp best.pt user@device:/tmp/
+ssh user@device 'python3 -c "
+from ultralytics import YOLO
+model = YOLO(\"/tmp/best.pt\")
+results = model.benchmark(imgsz=640, half=True, device=0)
+"'
+```
+
+**Report:**
+
+```
+FPS BENCHMARK
+=============
+Device:          <device name>
+Model:           <model file>
+Input size:      <imgsz>
+Precision:       FP16 / FP32
+Inference FPS:   XX.X
+Latency (ms):    XX.X
+
+Target FPS:      <user requirement>
+Status:          PASS / FAIL
+```
+
+**If FPS is below target:**
+1. Reduce `imgsz` (biggest impact — halving size roughly 4x faster)
+2. Use a smaller model variant (n → pico, s → n)
+3. Ensure TensorRT export with FP16 on the target device
+4. Reduce input resolution at the camera/pipeline level
+
+### Step 6: Save Model Metadata
 
 Write a metadata file alongside the model:
 
