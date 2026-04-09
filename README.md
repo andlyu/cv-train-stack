@@ -36,10 +36,10 @@ No config file needed. The skill auto-detects your project setup by scanning for
 ## Usage
 
 ```
-/cv-training review          # Pre-training checklist
-/cv-training run classifier  # Execute training with all checks
-/cv-training validate model.pt  # Post-training validation
-/cv-training audit           # Full preprocessing consistency audit
+/cv-training              # Full training workflow (review + run)
+/cv-training review       # Pre-training checklist only
+/cv-training validate     # Post-training validation
+/cv-training audit        # Preprocessing consistency audit
 ```
 
 ## What gets checked
