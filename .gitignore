@@ -1,0 +1,9 @@
+*.pt
+*.onnx
+*.engine
+runs/
+outputs/
+datasets/
+.claude/
+__pycache__/
+*.pyc
