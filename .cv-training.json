@@ -1,0 +1,30 @@
+{
+  "models": {
+    "detector": {
+      "architecture": "yolo11n-seg",
+      "input_size": 640,
+      "num_classes": null,
+      "training_script": "scripts/train.py",
+      "export_script": "scripts/export.py",
+      "inference_paths": [
+        "server/inference_server.py"
+      ]
+    }
+  },
+  "dataset": {
+    "source": "roboflow",
+    "workspace": "andrews-workspace-gzmvj",
+    "project": "blackberry-in-gripper-kckew",
+    "version": 50,
+    "format": "yolov11",
+    "local_path": "datasets/blackberry-in-gripper"
+  },
+  "dataset_dir": "datasets/",
+  "output_dir": "outputs/train/",
+  "export_formats": ["onnx", "engine"],
+  "deployment": {
+    "target": "jetson-orin-nano",
+    "precision": "fp16",
+    "server": "server/inference_server.py"
+  }
+}

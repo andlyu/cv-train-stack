@@ -1,0 +1,10 @@
+ultralytics>=8.3.0
+roboflow>=1.1.0
+onnx>=1.14.0
+onnxruntime>=1.16.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+Pillow>=10.0.0
+numpy>=1.24.0
+opencv-python-headless>=4.8.0
