@@ -31,39 +31,7 @@ ln -s $(pwd)/cv-training-stack/skill .claude/skills/cv-training
 
 ## Configuration
 
-Create a `.cv-training.json` in your project root to customize the skill for your project:
-
-```json
-{
-  "models": {
-    "classifier": {
-      "architecture": "mobilenetv3_small",
-      "input_size": 128,
-      "num_classes": 2,
-      "class_names": ["bad", "good"],
-      "training_script": "scripts/train_classifier.py",
-      "inference_paths": [
-        "src/pipeline/vision.py",
-        "tests/test_accuracy.py"
-      ],
-      "normalization": {
-        "mean": [0.485, 0.456, 0.406],
-        "std": [0.229, 0.224, 0.225]
-      }
-    },
-    "detector": {
-      "architecture": "yolov8n",
-      "input_size": 640,
-      "training_script": "scripts/train_detector.py"
-    }
-  },
-  "dataset_dir": "datasets/",
-  "output_dir": "outputs/train/",
-  "export_formats": ["onnx", "tensorrt"]
-}
-```
-
-If no config file exists, the skill will auto-detect by scanning your project.
+No config file needed. The skill auto-detects your project setup by scanning for training scripts, model files, and dataset directories.
 
 ## Usage
 
