@@ -250,6 +250,38 @@ For transfer learning (classifier):
 2. Unfreeze top layers, fine-tune with 10x lower LR
 3. Use ImageNet normalization: mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
 
+### Step 4b: GPU Utilization Check
+
+**If training on a paid GPU, offer to check utilization during the first few epochs.**
+You're paying by the hour — an underutilized GPU is wasted money.
+
+After training starts, sample GPU stats:
+
+```bash
+# On the training machine (via SSH if remote)
+nvidia-smi --query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total --format=csv,noheader
+```
+
+| Metric | Target | If below target |
+|--------|--------|----------------|
+| GPU utilization | >80% | Data loading bottleneck — increase `workers`, enable `cache=True`, or use faster storage |
+| Memory utilization | >50% | Batch size too small — increase `batch` until memory is 60-80% used |
+| Memory used vs total | 60-80% of total | If <40%, double the batch size. If >90%, reduce batch to avoid OOM |
+
+**Common fixes for low GPU utilization:**
+
+1. **Increase batch size** — the single biggest lever. Use `batch=-1` (auto) for YOLO,
+   or manually set to fill 60-80% of VRAM.
+2. **Increase dataloader workers** — `workers=8` or higher. CPU preprocessing can
+   starve the GPU if workers is too low.
+3. **Enable caching** — `cache=True` or `cache='disk'` loads all images into RAM/disk
+   once, eliminating repeated I/O.
+4. **Increase image size** — if GPU memory allows, larger `imgsz` uses more compute
+   per batch and can improve accuracy.
+
+**When to skip:** If GPU util is already >80% and memory is 60-80% used, the config
+is already well-tuned. Don't over-optimize.
+
 ### Step 5: Logging and Reproducibility
 
 Before training starts, verify:

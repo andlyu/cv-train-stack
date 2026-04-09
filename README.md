@@ -1,5 +1,7 @@
 # CV Training Stack
 
+> **Quick install:** Tell Claude Code: *"Let's add https://github.com/andlyu/cv-train-stack/tree/main to our skills"*
+
 A Claude Code skill for computer vision model training. Drop it into any project and get a structured training workflow with best-practices checks built in.
 
 ## What it does
