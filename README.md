@@ -37,9 +37,9 @@ No config file needed. The skill auto-detects your project setup by scanning for
 
 ```
 /cv-training              # Full training workflow (review + run)
-/cv-training review       # Pre-training checklist only
-/cv-training validate     # Post-training validation
-/cv-training audit        # Preprocessing consistency audit
+/cv-training review       # Dataset audit, config review, GPU detection
+/cv-training validate     # Post-training model validation
+/cv-training audit        # Check all code paths use matching preprocessing
 ```
 
 ## What gets checked
