@@ -1,7 +1,7 @@
 # CV Training Stack
 
 <p align="center">
-  <video src="viz_8575_8677.mp4" width="360" autoplay loop muted playsinline></video>
+  <video src="https://github.com/andlyu/cv-train-stack/raw/main/viz_8575_8677.mp4" width="360" autoplay loop muted playsinline></video>
 </p>
 
 > **Quick install:** Tell Claude Code: *"Add the skill from https://github.com/andlyu/cv-train-stack"*
