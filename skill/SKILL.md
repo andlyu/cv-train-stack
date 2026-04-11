@@ -145,6 +145,143 @@ This is non-negotiable — the CSV log is the minimum. W&B is additive on top.
 - `wandb.log()` each epoch with train/val loss, accuracy, and LR
 - Log the best model as a W&B artifact
 
+### Step 0e: Colab Notebook Detection
+
+**Check if the user has an existing Colab/Jupyter notebook for training.**
+
+```bash
+# Find all notebooks in the project
+find . -name "*.ipynb" -not -path "./.git/*" -not -path "*/.ipynb_checkpoints/*" | head -20
+```
+
+If notebooks are found, read them and determine if they contain training logic:
+
+```bash
+# Quick scan for training-related content in notebooks
+python3 -c "
+import json, sys, glob
+for nb_path in glob.glob('**/*.ipynb', recursive=True):
+    with open(nb_path) as f:
+        nb = json.load(f)
+    sources = ' '.join(c.get('source',['']) if isinstance(c.get('source',''), str)
+                       else ' '.join(c.get('source',[])) for c in nb.get('cells',[]))
+    has_training = any(k in sources.lower() for k in ['model.train', '.fit(', 'trainer.', 'yolo', 'epochs', 'train_loader'])
+    has_gpu = any(k in sources for k in ['cuda', 'gpu', 'runtime'])
+    if has_training:
+        print(f'TRAINING NOTEBOOK: {nb_path} (GPU refs: {has_gpu})')
+"
+```
+
+**If a training notebook is found:**
+
+1. **Ask the user:** "Found `<notebook.ipynb>` — would you like to use this notebook
+   as your training script? I can convert it to a runnable Python script, wire up
+   GPU compute, and integrate its visualizations into the verification steps."
+
+2. **Convert to executable script:**
+
+   ```bash
+   # Convert notebook to Python script (strips outputs and magic commands)
+   jupyter nbconvert --to script <notebook.ipynb> --output training_from_notebook
+
+   # Or if jupyter is not installed:
+   python3 -c "
+   import json
+   with open('<notebook.ipynb>') as f:
+       nb = json.load(f)
+   with open('training_from_notebook.py', 'w') as out:
+       for cell in nb['cells']:
+           if cell['cell_type'] == 'code':
+               source = ''.join(cell['source'])
+               # Skip Colab-specific magic commands
+               lines = []
+               for line in source.split('\n'):
+                   stripped = line.strip()
+                   if stripped.startswith(('!pip ', '!apt ', '%', 'from google.colab',
+                                          'import google.colab', 'drive.mount',
+                                          'files.download', 'files.upload')):
+                       lines.append(f'# [COLAB-SKIP] {line}')
+                   elif stripped.startswith('!'):
+                       # Convert shell commands to subprocess calls
+                       cmd = stripped[1:]
+                       lines.append(f'import subprocess; subprocess.run({cmd!r}, shell=True, check=True)')
+                   else:
+                       lines.append(line)
+               out.write('\n'.join(lines))
+               out.write('\n\n')
+   print('Converted to training_from_notebook.py')
+   "
+   ```
+
+3. **Review the converted script** for issues:
+   - **Hardcoded Colab paths** (`/content/drive/`, `/content/`): replace with local project paths
+   - **Google Drive mounts**: remove or replace with local paths
+   - **Colab-specific installs** (`!pip install`): extract into `requirements.txt`
+   - **Inline `%matplotlib` magic**: replace with `matplotlib.use('Agg')` for headless rendering
+   - **Missing `plt.savefig()`**: add saves for any `plt.show()` calls so visualizations are captured
+   - **Hardcoded dataset URLs**: check they're still accessible, or point to local data
+
+4. **Extract dependencies** the notebook assumes:
+
+   ```bash
+   # Pull all imports from the converted script
+   python3 -c "
+   import ast, sys
+   with open('training_from_notebook.py') as f:
+       tree = ast.parse(f.read())
+   imports = set()
+   for node in ast.walk(tree):
+       if isinstance(node, ast.Import):
+           for alias in node.names:
+               imports.add(alias.name.split('.')[0])
+       elif isinstance(node, ast.ImportFrom) and node.module:
+           imports.add(node.module.split('.')[0])
+   # Filter out stdlib
+   stdlib = {'os','sys','json','math','time','glob','pathlib','shutil','collections',
+             'itertools','functools','random','copy','csv','datetime','re','io','argparse'}
+   print('\n'.join(sorted(imports - stdlib)))
+   "
+   ```
+
+   Install any missing packages before training.
+
+5. **Patch visualization cells** to save outputs to disk:
+
+   Any `plt.show()` in the notebook should become `plt.savefig()` followed by `plt.show()`.
+   The converted script should save all plots to an `outputs/plots/` directory with
+   descriptive filenames (e.g., `training_curves.png`, `confusion_matrix.png`,
+   `sample_predictions.png`). These plots will be used in verification steps.
+
+   ```python
+   # Template patch: replace bare plt.show() calls
+   import os
+   os.makedirs('outputs/plots', exist_ok=True)
+   PLOT_COUNTER = [0]
+
+   _original_show = plt.show
+   def _saving_show(*args, **kwargs):
+       PLOT_COUNTER[0] += 1
+       plt.savefig(f'outputs/plots/notebook_plot_{PLOT_COUNTER[0]:03d}.png',
+                   dpi=150, bbox_inches='tight')
+       _original_show(*args, **kwargs)
+   plt.show = _saving_show
+   ```
+
+   Add this patch near the top of the converted script, after matplotlib is imported.
+
+**If NO notebook found but user mentions they have one:**
+
+Ask them to place it in the project directory or provide the path/URL. If it's a
+Colab URL, download it:
+
+```bash
+# Download notebook from Colab share link
+# Convert share URL to download URL: replace /edit with /export?format=ipynb
+COLAB_URL="<user's share link>"
+DOWNLOAD_URL=$(echo "$COLAB_URL" | sed 's|/edit.*|/export?format=ipynb|')
+curl -L "$DOWNLOAD_URL" -o notebook.ipynb
+```
+
 ### Step 0c: Read Current State
 
 ```
@@ -193,6 +330,12 @@ If the project has no `scripts/visualize_samples.py`, create one that:
 2. Draws segmentation polygons (filled with 30% opacity) and class names
 3. Arranges them in a 2-column grid
 4. Opens the grid in the system image viewer (macOS `open`, Linux `xdg-open`)
+
+**If a Colab notebook was detected (Step 0e)** and it contains visualization cells
+(e.g., displaying sample images, augmentation previews, or label overlays), extract
+those cells into the visualization script or reuse their output images from
+`outputs/plots/`. Notebook authors often include good visual QA — don't duplicate it,
+integrate it.
 
 Report findings. If any FAIL, stop and address before proceeding.
 
@@ -486,6 +629,55 @@ haven't destroyed it.
 
 4c. Upload dataset, run training via SSH, download weights.
 
+#### Path D: Colab Notebook as Training Script
+
+If a Colab notebook was detected in Step 0e and the user confirmed its use:
+
+4d. **Prepare and execute the converted notebook script:**
+
+```
+1. Verify the converted script exists (training_from_notebook.py)
+   - If not, run the conversion from Step 0e now
+
+2. Ensure all Colab-specific paths are patched:
+   a. Replace /content/drive/MyDrive/... → local project paths
+   b. Replace /content/ → ./
+   c. Replace Colab dataset download cells → local dataset path or
+      remote pull commands suitable for the target machine
+
+3. Verify the visualization capture patch is in place:
+   - All plt.show() calls save to outputs/plots/
+   - Training curve callbacks save to outputs/plots/training_curves.png
+   - Confusion matrix / PR curves save to outputs/plots/
+
+4. Run on the selected compute (local GPU, VAST, etc.):
+   python3 training_from_notebook.py
+```
+
+**Common Colab notebook adaptations for local/VAST execution:**
+
+| Colab Pattern | Local/VAST Replacement |
+|---|---|
+| `from google.colab import drive; drive.mount(...)` | Remove — use local paths |
+| `!pip install ultralytics` | Add to requirements.txt, install before run |
+| `!gdown <id>` | `gdown <id>` or point to local dataset |
+| `%cd /content/` | Remove or `os.chdir(project_root)` |
+| `from google.colab import files; files.download(...)` | `shutil.copy(src, 'outputs/')` |
+| `from IPython.display import Image, display` | `plt.imshow(plt.imread(path)); plt.savefig(...)` |
+| `model.train(data='/content/data.yaml', ...)` | Update `data=` path to local data.yaml |
+| GPU runtime selection (Colab menu) | Handled by Step 0a/0b GPU detection |
+
+**If the notebook downloads a dataset from Roboflow, HuggingFace, or a URL:**
+
+Keep that download logic but adapt it:
+- On VAST: let it download directly on the instance (fast datacenter internet)
+- Locally: download to `datasets/` directory and update paths
+
+**After training completes**, the converted script should have produced:
+- Trained model weights in the expected output directory
+- Training plots in `outputs/plots/` (from the visualization capture patch)
+- CSV training log in `outputs/training_log.csv` (add if notebook doesn't produce one)
+
 ### Background Operations
 
 **Run GPU launches, dataset downloads, and training in the background** so the user
@@ -641,6 +833,118 @@ preprocessing:
   normalization_std: [0.229, 0.224, 0.225]
   channel_order: RGB
 ```
+
+### Step 7: Notebook Visualization Review
+
+**If the training run originated from a Colab notebook (Step 0e), review all captured
+visualizations as part of validation.**
+
+```bash
+# List all captured plots
+ls -la outputs/plots/*.png 2>/dev/null
+```
+
+**For each visualization found, display it and verify:**
+
+```bash
+# Open all plots for review (macOS)
+open outputs/plots/*.png
+
+# Or display inline if running in a notebook/terminal with image support
+python3 -c "
+import glob
+for p in sorted(glob.glob('outputs/plots/*.png')):
+    print(f'Plot: {p}')
+"
+```
+
+**Expected visualizations from typical training notebooks and what to check:**
+
+| Plot | What to verify | Red flags |
+|------|---------------|-----------|
+| **Training curves** (loss vs epoch) | Train loss decreasing, val loss following | Val loss diverging from train = overfitting |
+| **Confusion matrix** | Diagonal-dominant, no systematic misclassifications | Off-diagonal clusters = class confusion |
+| **PR curve / F1 curve** | Smooth curves, high AUC | Jagged = insufficient val data |
+| **Sample predictions** | Correct labels, reasonable confidence | Low confidence on easy examples = problem |
+| **Augmentation previews** | Augmentations look realistic | Over-aggressive distortion = hurting accuracy |
+| **Class distribution** | Roughly balanced or intentionally weighted | Extreme imbalance not addressed |
+| **Learning rate schedule** | Smooth warmup then decay | Spikes or flat regions = misconfigured scheduler |
+
+**If key visualizations are missing**, generate them from training outputs:
+
+```python
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import csv, os
+
+os.makedirs('outputs/plots', exist_ok=True)
+
+# Generate training curves from CSV log
+if os.path.exists('outputs/training_log.csv'):
+    with open('outputs/training_log.csv') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    if rows:
+        epochs = [int(r['epoch']) for r in rows]
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+        axes[0].plot(epochs, [float(r['train_loss']) for r in rows], label='train')
+        axes[0].plot(epochs, [float(r['val_loss']) for r in rows], label='val')
+        axes[0].set_title('Loss'); axes[0].legend(); axes[0].set_xlabel('Epoch')
+        axes[1].plot(epochs, [float(r['train_acc']) for r in rows], label='train')
+        axes[1].plot(epochs, [float(r['val_acc']) for r in rows], label='val')
+        axes[1].set_title('Accuracy'); axes[1].legend(); axes[1].set_xlabel('Epoch')
+        plt.tight_layout()
+        plt.savefig('outputs/plots/training_curves.png', dpi=150, bbox_inches='tight')
+        print('Saved: outputs/plots/training_curves.png')
+
+# Generate confusion matrix from YOLO results
+results_csv = None
+for p in ['runs/segment/train/results.csv', 'runs/detect/train/results.csv']:
+    if os.path.exists(p):
+        results_csv = p
+        break
+
+confusion_png = None
+for p in ['runs/segment/train/confusion_matrix.png',
+          'runs/detect/train/confusion_matrix.png']:
+    if os.path.exists(p):
+        confusion_png = p
+        break
+
+if confusion_png:
+    import shutil
+    shutil.copy(confusion_png, 'outputs/plots/confusion_matrix.png')
+    print(f'Copied: {confusion_png} → outputs/plots/confusion_matrix.png')
+```
+
+**Integrate visualizations into the validation report:**
+
+After running all validation steps (1-6), present a summary that includes
+the notebook's visual outputs alongside numerical results:
+
+```
+VALIDATION SUMMARY
+==================
+Numerical equivalence:  PASS (max diff: 0.003)
+Accuracy test:          PASS (96.2%)
+Batch sensitivity:      PASS
+Golden fixture:         PASS (12/12 within tolerance)
+FPS benchmark:          PASS (45 FPS on Jetson Orin NX)
+
+TRAINING VISUALIZATIONS
+=======================
+✓ Training curves:      outputs/plots/training_curves.png
+  → Loss converged at epoch 87, no overfitting detected
+✓ Confusion matrix:     outputs/plots/confusion_matrix.png
+  → Clean diagonal, no systematic misclassifications
+✓ Sample predictions:   outputs/plots/sample_predictions.png
+  → 20/20 correct on spot-check
+✗ PR curve:             NOT FOUND — recommend generating from val results
+```
+
+Open all available plots for the user to review visually before signing off
+on the model.
 
 ---
 

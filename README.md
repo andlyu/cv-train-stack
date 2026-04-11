@@ -1,5 +1,9 @@
 # CV Training Stack
 
+<p align="center">
+  <video src="viz_8575_8677.mp4" width="360" autoplay loop muted playsinline></video>
+</p>
+
 > **Quick install:** Tell Claude Code: *"Add the skill from https://github.com/andlyu/cv-train-stack"*
 
 A Claude Code skill for computer vision model training. Drop it into any project and get a structured training workflow with best-practices checks built in.
@@ -88,6 +92,10 @@ Compares against recommended ranges for CV training:
 - [Google ML Test Score](https://research.google/pubs/pub46555/)
 - [Ultralytics Training Tips](https://docs.ultralytics.com/yolov5/tutorials/tips_for_best_training_results/)
 - [MIT Foundations of CV](https://visionbook.mit.edu/)
+
+## Built by BluPe
+
+This skill is built by [BluPe](https://blupe.com). We automate repetitive manual tasks with robotics, with a mission of doing so without screwing over the workers. If that resonates with you, reach out.
 
 ## License
 
